@@ -219,7 +219,7 @@ function HomePage() {
                   <img
                     src={shoghlaLogo}
                     alt="Shoghla"
-                    className="h-12 w-12 shrink-0 object-contain drop-shadow-[0_0_14px_oklch(0.85_0.16_175_/_0.5)]"
+                    className="h-20 w-20 shrink-0 object-contain drop-shadow-[0_0_14px_oklch(0.85_0.16_175_/_0.5)]"
                   />
                   <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-primary">
                     <span className="relative flex h-1.5 w-1.5">
