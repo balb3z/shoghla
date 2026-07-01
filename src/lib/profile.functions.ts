@@ -1,6 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import pdfParse from "pdf-parse";
+import mammoth from "mammoth";
 import { getSupabaseServerClient } from "./supabase/server";
+import { extractCVData } from "./cv-extract";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -103,63 +106,6 @@ async function runSql(statement: string) {
 
 function esc(v: string) {
   return v.replace(/'/g, "''");
-}
-
-// ─── CV Extraction via Gemini 2.0 Flash (free tier: 15 RPM, no billing needed) ─
-
-async function extractCVWithGemini(text: string): Promise<CVData> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY is not configured. Get a free key at https://aistudio.google.com/apikey");
-
-  const prompt = `You are an expert CV/resume parser. Extract structured information from the resume text below and return ONLY a valid JSON object — no markdown fences, no explanation, no extra text.
-
-The JSON must have exactly these fields (use empty arrays/strings if a section is missing):
-{
-  "skills": ["skill1", "skill2"],
-  "experience": [{"title": "", "company": "", "duration": "", "description": ""}],
-  "education": [{"degree": "", "institution": "", "year": ""}],
-  "projects": [{"name": "", "description": "", "technologies": []}],
-  "certifications": [{"name": "", "issuer": "", "year": ""}],
-  "summary": "brief professional summary paragraph"
-}
-
-RESUME TEXT:
-${text.slice(0, 14000)}`;
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.1,       // low temperature = deterministic, structured output
-          maxOutputTokens: 2048,
-        },
-      }),
-    },
-  );
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Gemini API error ${res.status}: ${err.slice(0, 300)}`);
-  }
-
-  const json = (await res.json()) as any;
-  const raw: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-
-  // Strip any accidental markdown fences
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/,"").trim();
-
-  try {
-    return JSON.parse(cleaned) as CVData;
-  } catch {
-    // Last-resort: grab the first {...} block
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]) as CVData;
-    throw new Error("Gemini returned non-JSON output — could not parse CV data.");
-  }
 }
 
 // ─── Match jobs to CV ─────────────────────────────────────────────────────────
@@ -273,7 +219,7 @@ export const getProfile = createServerFn({ method: "GET" }).handler(async (): Pr
   }
 });
 
-/** Upload CV to Supabase Storage and extract data with Claude */
+/** Upload CV to Supabase Storage, extract its text, and parse skills/experience via keyword matching */
 export const uploadAndExtractCV = createServerFn({ method: "POST" })
   .inputValidator((raw: unknown) => {
     const d = raw as { fileBase64: string; fileName: string; mimeType: string };
@@ -310,18 +256,11 @@ export const uploadAndExtractCV = createServerFn({ method: "POST" })
       const cvUrl = urlData.publicUrl;
 
       // Extract text from the file
-      let extractedText = "";
-      if (data.mimeType === "application/pdf") {
-        // For PDFs, use a text extraction approach via base64 decode + simple text scan
-        // Since we're server-side, we parse printable ASCII from the PDF buffer
-        extractedText = extractTextFromBuffer(fileBuffer, "pdf");
-      } else {
-        // For DOCX, extract XML text content
-        extractedText = extractTextFromBuffer(fileBuffer, "docx");
-      }
+      const isPdf = data.mimeType === "application/pdf" || ext === "pdf";
+      const extractedText = await extractTextFromBuffer(fileBuffer, isPdf ? "pdf" : "docx");
 
-      // Extract structured CV data with Gemini 2.0 Flash
-      const cvData = await extractCVWithGemini(extractedText || data.fileName);
+      // Extract structured CV data locally via section detection + keyword matching
+      const cvData = extractCVData(extractedText || data.fileName);
 
       // Save to Supabase
       const { data: profileData, error: upsertError } = await supabase
@@ -455,41 +394,20 @@ export const getSavedJobs = createServerFn({ method: "GET" })
   });
 
 // ─── Text extraction helpers ───────────────────────────────────────────────────
+// PDFs are parsed with pdf-parse, DOCX files with mammoth. Both run entirely
+// server-side (this file only ever executes inside createServerFn handlers).
 
-function extractTextFromBuffer(buf: Buffer, type: "pdf" | "docx"): string {
-  if (type === "pdf") {
-    // Extract printable ASCII strings from PDF binary
-    const raw = buf.toString("latin1");
-    const strings: string[] = [];
-    let current = "";
-    for (let i = 0; i < raw.length; i++) {
-      const c = raw.charCodeAt(i);
-      if ((c >= 32 && c <= 126) || c === 10 || c === 13) {
-        current += raw[i];
-      } else {
-        if (current.length > 3) strings.push(current.trim());
-        current = "";
-      }
+async function extractTextFromBuffer(buf: Buffer, type: "pdf" | "docx"): Promise<string> {
+  try {
+    if (type === "pdf") {
+      const result = await pdfParse(buf);
+      return (result.text ?? "").trim().slice(0, 15000);
+    } else {
+      const result = await mammoth.extractRawText({ buffer: buf });
+      return (result.value ?? "").trim().slice(0, 15000);
     }
-    if (current.length > 3) strings.push(current.trim());
-    return strings
-      .filter((s) => s.length > 4 && !/^[\d\s.,()\-/]+$/.test(s))
-      .join(" ")
-      .slice(0, 15000);
-  } else {
-    // DOCX is a ZIP — extract XML word/document.xml as text
-    try {
-      const raw = buf.toString("latin1");
-      // Find word/document.xml content between XML tags
-      const xmlMatch = raw.match(/word\/document\.xml[^<]*(<\?xml[\s\S]*?)<\/pkg:xmlData>/);
-      if (xmlMatch) {
-        return xmlMatch[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 15000);
-      }
-      // Fallback: strip all XML-like tags from any segment
-      const xmlContent = raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-      return xmlContent.slice(0, 15000);
-    } catch {
-      return "";
-    }
+  } catch (e) {
+    console.error(`Failed to extract text from ${type.toUpperCase()}:`, e);
+    return "";
   }
 }
