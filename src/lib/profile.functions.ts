@@ -411,8 +411,24 @@ async function extractPdfText(buf: Buffer): Promise<string> {
   // avoids bundling the large worker into the client bundle.
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-  // Disable the worker — we're running in Node, not a browser context.
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+  // pdfjs-dist always tries to spin up a worker, and when none is available
+  // it falls back to running the worker code on the main thread (a "fake
+  // worker"). That fallback still reads `GlobalWorkerOptions.workerSrc`
+  // internally and *throws* `No "GlobalWorkerOptions.workerSrc" specified.`
+  // if it's falsy — and "" is falsy, which is exactly what was breaking
+  // this (the previous `workerSrc = ""` line caused the reported
+  // `Setting up fake worker failed: "No "GlobalWorkerOptions.workerSrc"
+  // specified.".` error).
+  //
+  // The reliable fix for server-side/Node usage is to import the worker
+  // module directly and expose it on `globalThis.pdfjsWorker`. pdfjs
+  // checks for that global before it ever looks at `workerSrc`, so the
+  // worker code runs in-process without needing a resolvable URL/path
+  // (which is also what makes this safe inside a bundled server build).
+  if (!(globalThis as any).pdfjsWorker) {
+    const pdfjsWorker = await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
+    (globalThis as any).pdfjsWorker = pdfjsWorker;
+  }
 
   const loadingTask = pdfjsLib.getDocument({
     data: new Uint8Array(buf),
