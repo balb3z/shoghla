@@ -105,230 +105,61 @@ function esc(v: string) {
   return v.replace(/'/g, "''");
 }
 
-// ─── CV Extraction — free rule-based parser (no API key required) ─────────────
+// ─── CV Extraction via Gemini 2.0 Flash (free tier: 15 RPM, no billing needed) ─
 
-// Comprehensive skill keyword list covering tech, languages, frameworks, tools
-const KNOWN_SKILLS = [
-  // Languages
-  "javascript","typescript","python","java","c++","c#","go","rust","ruby","php",
-  "swift","kotlin","scala","r","matlab","perl","bash","shell","powershell","sql",
-  "html","css","sass","less","xml","json","yaml","graphql","dart","elixir","haskell",
-  // Frontend
-  "react","vue","angular","svelte","next.js","nextjs","nuxt","gatsby","remix",
-  "tailwind","bootstrap","material ui","redux","zustand","webpack","vite","rollup",
-  "jquery","ember","backbone","lit","web components","pwa","spa",
-  // Backend
-  "node.js","nodejs","express","fastapi","flask","django","spring","laravel",
-  "rails","asp.net","nestjs","hapi","koa","gin","echo","fiber","actix",
-  "graphql","rest","grpc","microservices","api",
-  // Databases
-  "postgresql","mysql","sqlite","mongodb","redis","elasticsearch","cassandra",
-  "dynamodb","firebase","supabase","neo4j","influxdb","clickhouse","snowflake",
-  "databricks","bigquery","oracle","mssql","mariadb","couchdb",
-  // Cloud & DevOps
-  "aws","azure","gcp","google cloud","docker","kubernetes","terraform","ansible",
-  "jenkins","github actions","gitlab ci","circleci","helm","prometheus","grafana",
-  "nginx","apache","linux","ubuntu","debian","centos","vercel","netlify","heroku",
-  "cloudflare","digitalocean","lambda","ec2","s3","rds","ecs","eks",
-  // Data & ML
-  "machine learning","deep learning","tensorflow","pytorch","keras","scikit-learn",
-  "pandas","numpy","matplotlib","seaborn","spark","hadoop","kafka","airflow",
-  "dbt","looker","tableau","power bi","nlp","computer vision","llm","ai",
-  "data science","data engineering","etl","mlops","hugging face",
-  // Mobile
-  "react native","flutter","android","ios","xcode","android studio","expo",
-  // Tools & Methods
-  "git","github","gitlab","bitbucket","jira","confluence","notion","figma",
-  "agile","scrum","kanban","tdd","ci/cd","devops","sre","microservices",
-  "oauth","jwt","rest api","graphql api","websockets","linux","vim",
-  // Soft / Domain
-  "project management","leadership","communication","teamwork","problem solving",
-];
+async function extractCVWithGemini(text: string): Promise<CVData> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY is not configured. Get a free key at https://aistudio.google.com/apikey");
 
-// Section heading patterns
-const SECTION_PATTERNS: Record<string, RegExp> = {
-  summary:        /^(summary|profile|objective|about|professional\s+summary|career\s+objective)/i,
-  experience:     /^(experience|work\s+experience|employment|professional\s+experience|work\s+history|career\s+history)/i,
-  education:      /^(education|academic|qualification|degrees?|schooling|university|college)/i,
-  skills:         /^(skills?|technical\s+skills?|core\s+competenc|technologies|tools|expertise|proficienc)/i,
-  projects:       /^(projects?|personal\s+projects?|portfolio|open\s+source|side\s+projects?)/i,
-  certifications: /^(certifications?|licenses?|credentials?|accreditations?|courses?|training)/i,
-};
+  const prompt = `You are an expert CV/resume parser. Extract structured information from the resume text below and return ONLY a valid JSON object — no markdown fences, no explanation, no extra text.
 
-// Job title keywords for detecting experience entries
-const TITLE_KEYWORDS = [
-  "engineer","developer","manager","analyst","designer","architect","lead","head",
-  "director","officer","consultant","specialist","coordinator","administrator",
-  "scientist","researcher","intern","associate","senior","junior","principal",
-  "staff","vp","president","founder","cto","ceo","coo","ciso",
-];
+The JSON must have exactly these fields (use empty arrays/strings if a section is missing):
+{
+  "skills": ["skill1", "skill2"],
+  "experience": [{"title": "", "company": "", "duration": "", "description": ""}],
+  "education": [{"degree": "", "institution": "", "year": ""}],
+  "projects": [{"name": "", "description": "", "technologies": []}],
+  "certifications": [{"name": "", "issuer": "", "year": ""}],
+  "summary": "brief professional summary paragraph"
+}
 
-// Degree keywords
-const DEGREE_KEYWORDS = [
-  "bachelor","master","phd","doctorate","b.sc","m.sc","b.eng","m.eng","mba",
-  "b.a","m.a","associate","diploma","certificate","b.s.","m.s.","b.tech","m.tech",
-];
+RESUME TEXT:
+${text.slice(0, 14000)}`;
 
-// Certification issuer keywords
-const CERT_ISSUERS = [
-  "aws","google","microsoft","oracle","cisco","comptia","pmi","isaca","certified",
-  "certification","coursera","udemy","linkedin","ibm","redhat","vmware","salesforce",
-];
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.1,       // low temperature = deterministic, structured output
+          maxOutputTokens: 2048,
+        },
+      }),
+    },
+  );
 
-function extractCVRuleBased(text: string): CVData {
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-
-  // ── 1. Detect section boundaries ──────────────────────────────────────────
-  type SectionName = "summary"|"experience"|"education"|"skills"|"projects"|"certifications"|"other";
-  const sections: { name: SectionName; lines: string[] }[] = [];
-  let currentSection: SectionName = "other";
-  let currentLines: string[] = [];
-
-  for (const line of lines) {
-    // A heading is usually short (≤6 words) and matches a section keyword
-    const isHeading = line.split(/\s+/).length <= 6 && Object.entries(SECTION_PATTERNS).some(
-      ([, re]) => re.test(line),
-    );
-    if (isHeading) {
-      if (currentLines.length) sections.push({ name: currentSection, lines: currentLines });
-      currentSection = (Object.entries(SECTION_PATTERNS).find(([, re]) => re.test(line))?.[0] ?? "other") as SectionName;
-      currentLines = [];
-    } else {
-      currentLines.push(line);
-    }
-  }
-  if (currentLines.length) sections.push({ name: currentSection, lines: currentLines });
-
-  const get = (name: SectionName) => sections.filter((s) => s.name === name).flatMap((s) => s.lines);
-  const allText = text.toLowerCase();
-
-  // ── 2. Skills ─────────────────────────────────────────────────────────────
-  const skillLines = get("skills");
-  const skillsFromSection = skillLines
-    .flatMap((l) => l.split(/[,|•·\-–/\\]/))
-    .map((s) => s.trim())
-    .filter((s) => s.length >= 2 && s.length <= 40);
-
-  // Also scan full text for known skill keywords
-  const scannedSkills = KNOWN_SKILLS.filter((sk) => {
-    const re = new RegExp(`\\b${sk.replace(/[.+]/g, "\\$&")}\\b`, "i");
-    return re.test(allText);
-  });
-
-  const skills = [
-    ...new Set([
-      ...skillsFromSection.filter((s) => s.length > 1),
-      ...scannedSkills,
-    ]),
-  ].slice(0, 30);
-
-  // ── 3. Experience ─────────────────────────────────────────────────────────
-  const expLines = get("experience");
-  const experience: CVData["experience"] = [];
-  let i = 0;
-  while (i < expLines.length) {
-    const line = expLines[i];
-    const hasTitle = TITLE_KEYWORDS.some((kw) => line.toLowerCase().includes(kw));
-    const hasDuration = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4}|present|current)/i.test(line);
-
-    if (hasTitle || (hasDuration && i < expLines.length - 1)) {
-      // Try to grab title, company, duration from the next 2–3 lines
-      const titleLine = line;
-      const nextLine = expLines[i + 1] ?? "";
-      const durationMatch = [line, nextLine, expLines[i + 2] ?? ""]
-        .join(" ")
-        .match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}[\s–\-]+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)?\w*\s*\d{0,4}|present|\d{4}\s*[-–]\s*(?:\d{4}|present)/i);
-
-      // Collect description lines until next heading-like entry
-      let j = i + 1;
-      const descLines: string[] = [];
-      while (j < expLines.length && j < i + 8) {
-        const hasNextTitle = TITLE_KEYWORDS.some((kw) => expLines[j].toLowerCase().includes(kw));
-        if (hasNextTitle && j > i + 1) break;
-        descLines.push(expLines[j]);
-        j++;
-      }
-
-      experience.push({
-        title: titleLine.replace(/\s*[|·•–-]\s*.*/,"").trim(),
-        company: nextLine.replace(/\s*[|·•–-]\s*.*/,"").trim(),
-        duration: durationMatch?.[0]?.trim() ?? "",
-        description: descLines.slice(0, 3).join(" ").slice(0, 200),
-      });
-      i = j;
-    } else {
-      i++;
-    }
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Gemini API error ${res.status}: ${err.slice(0, 300)}`);
   }
 
-  // ── 4. Education ──────────────────────────────────────────────────────────
-  const eduLines = get("education");
-  const education: CVData["education"] = [];
-  for (let e = 0; e < eduLines.length; e++) {
-    const line = eduLines[e];
-    const isDegree = DEGREE_KEYWORDS.some((kw) => line.toLowerCase().includes(kw));
-    const yearMatch = line.match(/\b(19|20)\d{2}\b/);
-    if (isDegree || yearMatch) {
-      const next = eduLines[e + 1] ?? "";
-      education.push({
-        degree: line.replace(/\b(19|20)\d{2}\b/g, "").trim(),
-        institution: next.split(/[,|]/)[0].trim(),
-        year: yearMatch?.[0] ?? next.match(/\b(19|20)\d{2}\b/)?.[0] ?? "",
-      });
-    }
-  }
+  const json = (await res.json()) as any;
+  const raw: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
 
-  // ── 5. Projects ───────────────────────────────────────────────────────────
-  const projLines = get("projects");
-  const projects: CVData["projects"] = [];
-  for (let p = 0; p < projLines.length; p++) {
-    const line = projLines[p];
-    // Project names are usually short lines followed by a description
-    if (line.length > 3 && line.length < 80 && !/^[-•·]/.test(line)) {
-      const descLine = projLines[p + 1] ?? "";
-      const techs = KNOWN_SKILLS.filter((sk) => {
-        const re = new RegExp(`\\b${sk.replace(/[.+]/g, "\\$&")}\\b`, "i");
-        return re.test(line) || re.test(descLine);
-      }).slice(0, 6);
-      projects.push({
-        name: line.trim(),
-        description: descLine.trim().slice(0, 200),
-        technologies: techs,
-      });
-      p++; // skip description line
-    }
-  }
+  // Strip any accidental markdown fences
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/,"").trim();
 
-  // ── 6. Certifications ─────────────────────────────────────────────────────
-  const certLines = get("certifications");
-  const certifications: CVData["certifications"] = [];
-  for (const line of certLines) {
-    if (line.length < 5) continue;
-    const yearMatch = line.match(/\b(19|20)\d{2}\b/);
-    const issuer = CERT_ISSUERS.find((iss) => line.toLowerCase().includes(iss.toLowerCase())) ?? "";
-    certifications.push({
-      name: line.replace(/\b(19|20)\d{2}\b/g, "").replace(new RegExp(issuer, "i"), "").trim(),
-      issuer,
-      year: yearMatch?.[0] ?? "",
-    });
+  try {
+    return JSON.parse(cleaned) as CVData;
+  } catch {
+    // Last-resort: grab the first {...} block
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]) as CVData;
+    throw new Error("Gemini returned non-JSON output — could not parse CV data.");
   }
-
-  // ── 7. Summary ────────────────────────────────────────────────────────────
-  const summaryLines = get("summary");
-  const summary =
-  summaryLines.join(" ").slice(0, 400).trim() ||
-  (get("other").find((l) => l.length > 60)?.slice(0, 300) ?? "");
-  return {
-    skills: skills.filter(Boolean),
-    experience: experience.filter((e) => e.title),
-    education: education.filter((e) => e.degree),
-    projects: projects.filter((p) => p.name),
-    certifications: certifications.filter((c) => c.name),
-    summary,
-  };
 }
 
 // ─── Match jobs to CV ─────────────────────────────────────────────────────────
@@ -489,8 +320,8 @@ export const uploadAndExtractCV = createServerFn({ method: "POST" })
         extractedText = extractTextFromBuffer(fileBuffer, "docx");
       }
 
-      // Extract structured CV data with the free rule-based parser
-      const cvData = extractCVRuleBased(extractedText || data.fileName);
+      // Extract structured CV data with Gemini 2.0 Flash
+      const cvData = await extractCVWithGemini(extractedText || data.fileName);
 
       // Save to Supabase
       const { data: profileData, error: upsertError } = await supabase
