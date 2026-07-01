@@ -28,7 +28,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Search thousands of tech jobs aggregated from LinkedIn, Indeed, Wuzzuf, Remotive and more, updated live from a Databricks lakehouse.",
+          "Search thousands of tech jobs aggregated from LinkedIn, Indeed, Wuzzuf, Remotive and more",
       },
       { property: "og:title", content: "Shoghla — Live job intelligence" },
       {
@@ -190,7 +190,7 @@ function HomePage() {
                 />
                 <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-primary/90">
                   <Sparkles className="h-3.5 w-3.5" />
-                  Live from Databricks lakehouse
+                  Live from The most Popular Job Platforms
                 </div>
               </div>
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-4 sm:flex sm:flex-wrap sm:justify-between">
@@ -202,8 +202,7 @@ function HomePage() {
                     </span>
                   </h1>
                   <p className="mt-2 max-w-2xl text-sm text-muted-foreground sm:text-base">
-                    Aggregated across LinkedIn, Indeed, Wuzzuf, Remotive and more — refreshed
-                    directly from your Delta table, newest first.
+                    Aggregated across LinkedIn, Indeed, Wuzzuf, Remotive and more 
                   </p>
                 </div>
                 <StatBadge total={total} loading={jobsQuery.isPending && !jobsQuery.data} />
@@ -335,8 +334,8 @@ function HomePage() {
             )}
 
             <footer className="mt-12 border-t border-border pt-6 text-center text-xs text-muted-foreground">
-              Data streamed from{" "}
-              <span className="font-mono text-foreground/80">depi_project.philo_files.gold_jobs</span> ·
+              
+              <span className="font-mono text-foreground/80"></span> ·
               Shoghla © {new Date().getFullYear()}
             </footer>
           </div>
