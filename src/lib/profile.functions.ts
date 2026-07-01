@@ -255,12 +255,21 @@ export const uploadAndExtractCV = createServerFn({ method: "POST" })
         .getPublicUrl(storagePath);
       const cvUrl = urlData.publicUrl;
 
-      // Extract text from the file
+      // Extract text from the file — throws with a descriptive message on failure
       const isPdf = data.mimeType === "application/pdf" || ext === "pdf";
-      const extractedText = await extractTextFromBuffer(fileBuffer, isPdf ? "pdf" : "docx");
+      let extractedText: string;
+      try {
+        extractedText = await extractTextFromBuffer(fileBuffer, isPdf ? "pdf" : "docx");
+      } catch (e) {
+        // Propagate the extraction error directly to the client; the file was
+        // already uploaded successfully so we surface the real problem rather
+        // than silently returning an empty profile.
+        const msg = e instanceof Error ? e.message : String(e);
+        return { success: false, error: msg };
+      }
 
       // Extract structured CV data locally via section detection + keyword matching
-      const cvData = extractCVData(extractedText || data.fileName);
+      const cvData = extractCVData(extractedText);
 
       // Save to Supabase
       const { data: profileData, error: upsertError } = await supabase
@@ -398,16 +407,39 @@ export const getSavedJobs = createServerFn({ method: "GET" })
 // server-side (this file only ever executes inside createServerFn handlers).
 
 async function extractTextFromBuffer(buf: Buffer, type: "pdf" | "docx"): Promise<string> {
-  try {
-    if (type === "pdf") {
-      const result = await pdfParse(buf);
-      return (result.text ?? "").trim().slice(0, 15000);
-    } else {
-      const result = await mammoth.extractRawText({ buffer: buf });
-      return (result.value ?? "").trim().slice(0, 15000);
+  if (type === "pdf") {
+    let result: Awaited<ReturnType<typeof pdfParse>>;
+    try {
+      result = await pdfParse(buf);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(`PDF parsing failed: ${msg}`);
     }
-  } catch (e) {
-    console.error(`Failed to extract text from ${type.toUpperCase()}:`, e);
-    return "";
+    const text = (result.text ?? "").trim();
+    if (!text) {
+      throw new Error(
+        "No text could be extracted from this PDF. It may be a scanned image — please export a text-based PDF or upload a DOCX instead.",
+      );
+    }
+    return text.slice(0, 15000);
+  } else {
+    let result: Awaited<ReturnType<typeof mammoth.extractRawText>>;
+    try {
+      result = await mammoth.extractRawText({ buffer: buf });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(`DOCX parsing failed: ${msg}`);
+    }
+    const text = (result.value ?? "").trim();
+    if (!text) {
+      throw new Error(
+        "No text could be extracted from this DOCX file. The file may be corrupted or contain only images.",
+      );
+    }
+    // Log any mammoth warnings (non-fatal) so they appear in server logs
+    if (result.messages?.length) {
+      console.warn("mammoth warnings:", result.messages.map((m) => m.message).join("; "));
+    }
+    return text.slice(0, 15000);
   }
 }
