@@ -4,11 +4,15 @@ import { useServerFn } from "@tanstack/react-start";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   AlertTriangle,
+  Building2,
   ChevronLeft,
   ChevronRight,
   Filter,
+  Globe2,
   LayoutGrid,
   MapPin,
+  PanelLeftClose,
+  PanelLeftOpen,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -60,6 +64,7 @@ function HomePage() {
   const [since, setSince] = useState<Since>("all");
   const [page, setPage] = useState(1);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const listJobsFn = useServerFn(listJobs);
   const listFiltersFn = useServerFn(listFilterOptions);
@@ -140,6 +145,8 @@ function HomePage() {
           totalKnown={total}
           mobileOpen={mobileFiltersOpen}
           onCloseMobile={() => setMobileFiltersOpen(false)}
+          desktopOpen={sidebarOpen}
+          onCloseDesktop={() => setSidebarOpen(false)}
         />
 
         <main className="min-w-0 flex-1">
@@ -153,6 +160,19 @@ function HomePage() {
                 aria-label="Open filters"
               >
                 <SlidersHorizontal className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setSidebarOpen((v) => !v)}
+                className="hidden lg:inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
+                aria-label={sidebarOpen ? "Collapse filters" : "Expand filters"}
+                title={sidebarOpen ? "Collapse filters" : "Expand filters"}
+              >
+                {sidebarOpen ? (
+                  <PanelLeftClose className="h-4 w-4" />
+                ) : (
+                  <PanelLeftOpen className="h-4 w-4" />
+                )}
               </button>
               <div className="lg:hidden">
                 <BrandMark compact />
@@ -181,31 +201,68 @@ function HomePage() {
 
           <div className="px-4 py-6 sm:px-6 lg:px-8">
             {/* Hero + stats */}
-            <section className="mb-6 flex flex-col gap-4 rounded-3xl border border-border bg-gradient-to-br from-surface to-background p-6 sm:p-8">
-              <div className="flex items-center gap-3">
-                <img
-                  src={shoghlaLogo}
-                  alt="Shoghla"
-                  className="h-12 w-12 shrink-0 object-contain drop-shadow-[0_0_14px_oklch(0.85_0.16_175_/_0.5)]"
-                />
-                <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-primary/90">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Live from The most Popular Job Platforms
+            <section className="relative mb-6 overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-surface via-surface to-background p-6 sm:p-10">
+              {/* Decorative glow blobs */}
+              <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-primary/20 blur-3xl" />
+              <div className="pointer-events-none absolute -bottom-28 -left-16 h-64 w-64 rounded-full bg-[oklch(0.78_0.14_210)]/15 blur-3xl" />
+              <div
+                className="pointer-events-none absolute inset-0 opacity-[0.05]"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(oklch(0.97 0.005 250) 1px, transparent 1px), linear-gradient(90deg, oklch(0.97 0.005 250) 1px, transparent 1px)",
+                  backgroundSize: "36px 36px",
+                }}
+              />
+
+              <div className="relative flex flex-col gap-6">
+                <div className="flex flex-wrap items-center gap-3">
+                  <img
+                    src={shoghlaLogo}
+                    alt="Shoghla"
+                    className="h-12 w-12 shrink-0 object-contain drop-shadow-[0_0_14px_oklch(0.85_0.16_175_/_0.5)]"
+                  />
+                  <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-primary">
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+                    </span>
+                    Live from the most popular job platforms
+                  </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-4 sm:flex sm:flex-wrap sm:justify-between">
-                <div className="min-w-0">
-                  <h1 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
+
+                <div>
+                  <h1 className="font-display text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl lg:text-6xl">
                     Every job worth applying to,{" "}
-                    <span className="bg-gradient-to-r from-primary to-[oklch(0.78_0.14_210)] bg-clip-text text-transparent">
+                    <span className="bg-gradient-to-r from-primary via-[oklch(0.82_0.15_190)] to-[oklch(0.78_0.14_210)] bg-clip-text text-transparent">
                       in one place.
                     </span>
                   </h1>
-                  <p className="mt-2 max-w-2xl text-sm text-muted-foreground sm:text-base">
-                    Aggregated across LinkedIn, Indeed, Wuzzuf, Remotive and more 
+                  <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
+                    Search, filter and apply across LinkedIn, Indeed, Wuzzuf, Remotive and more — all
+                    aggregated into a single, live-updating dashboard.
                   </p>
                 </div>
-                <StatBadge total={total} loading={jobsQuery.isPending && !jobsQuery.data} />
+
+                <div className="flex flex-wrap gap-3">
+                  <HeroStat
+                    icon={<LayoutGrid className="h-4 w-4" />}
+                    label="Open roles"
+                    value={total.toLocaleString()}
+                    loading={jobsQuery.isPending && !jobsQuery.data}
+                  />
+                  <HeroStat
+                    icon={<Globe2 className="h-4 w-4" />}
+                    label="Sources"
+                    value={(filtersQuery.data?.sources.length ?? 0).toLocaleString()}
+                    loading={filtersQuery.isPending}
+                  />
+                  <HeroStat
+                    icon={<Building2 className="h-4 w-4" />}
+                    label="Locations"
+                    value={(filtersQuery.data?.locations.length ?? 0).toLocaleString()}
+                    loading={filtersQuery.isPending}
+                  />
+                </div>
               </div>
             </section>
 
@@ -345,12 +402,27 @@ function HomePage() {
   );
 }
 
-function StatBadge({ total, loading }: { total: number; loading: boolean }) {
+function HeroStat({
+  icon,
+  label,
+  value,
+  loading,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  loading: boolean;
+}) {
   return (
-    <div className="shrink-0 rounded-2xl border border-primary/30 bg-primary/5 px-5 py-3 text-right shadow-[0_0_30px_-12px_oklch(0.85_0.16_175_/_0.4)]">
-      <div className="text-[10px] uppercase tracking-[0.2em] text-primary/90">Total roles</div>
-      <div className="font-display text-3xl font-bold tabular-nums text-foreground">
-        {loading ? "—" : total.toLocaleString()}
+    <div className="flex min-w-[9.5rem] items-center gap-3 rounded-2xl border border-primary/25 bg-primary/5 px-4 py-3 shadow-[0_0_30px_-14px_oklch(0.85_0.16_175_/_0.5)]">
+      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary">
+        {icon}
+      </div>
+      <div>
+        <div className="text-[10px] uppercase tracking-[0.18em] text-primary/90">{label}</div>
+        <div className="font-display text-xl font-bold tabular-nums text-foreground">
+          {loading ? "—" : value}
+        </div>
       </div>
     </div>
   );
@@ -368,6 +440,8 @@ function Sidebar({
   totalKnown,
   mobileOpen,
   onCloseMobile,
+  desktopOpen,
+  onCloseDesktop,
 }: {
   filtersQuery: ReturnType<typeof useQuery<Awaited<ReturnType<typeof listFilterOptions>>>>;
   selectedSources: string[];
@@ -380,15 +454,25 @@ function Sidebar({
   totalKnown: number;
   mobileOpen: boolean;
   onCloseMobile: () => void;
+  desktopOpen: boolean;
+  onCloseDesktop: () => void;
 }) {
   const sources = filtersQuery.data?.sources ?? [];
   const locations = filtersQuery.data?.locations ?? [];
   const loading = filtersQuery.isPending;
 
   const content = (
-    <div className="flex h-full flex-col gap-6 p-5">
-      <div className="hidden lg:block">
+    <div className="flex h-full min-h-0 flex-col gap-6 overflow-y-auto p-5">
+      <div className="hidden lg:flex items-center justify-between">
         <BrandMark />
+        <button
+          onClick={onCloseDesktop}
+          aria-label="Collapse filters"
+          title="Collapse filters"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
+        >
+          <PanelLeftClose className="h-4 w-4" />
+        </button>
       </div>
       <div className="lg:hidden flex items-center justify-between">
         <BrandMark />
@@ -482,8 +566,14 @@ function Sidebar({
   return (
     <>
       {/* Desktop */}
-      <aside className="hidden lg:block sticky top-0 h-screen w-72 shrink-0 border-r border-sidebar-border bg-sidebar">
-        {content}
+      <aside
+        className={`hidden lg:flex sticky top-0 h-screen shrink-0 flex-col overflow-hidden border-sidebar-border bg-sidebar transition-[width,border-width] duration-300 ease-in-out ${
+          desktopOpen ? "w-72 border-r" : "w-0 border-r-0"
+        }`}
+      >
+        <div className={`h-full w-72 transition-opacity duration-200 ${desktopOpen ? "opacity-100" : "opacity-0"}`}>
+          {content}
+        </div>
       </aside>
 
       {/* Mobile drawer */}

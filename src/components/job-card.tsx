@@ -81,8 +81,12 @@ export function JobCard({ job, isSaved: initialSaved = false, showSave = false }
         )}
       </div>
 
-      <div className="mt-auto flex items-center justify-between border-t border-border/60 pt-4">
-        {showSave ? (
+      <div
+        className={`mt-auto flex items-center border-t border-border/60 pt-4 ${
+          showSave ? "justify-between" : "justify-end"
+        }`}
+      >
+        {showSave && (
           <button
             type="button"
             onClick={toggleSave}
@@ -96,10 +100,6 @@ export function JobCard({ job, isSaved: initialSaved = false, showSave = false }
             {saved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
             {saved ? "Saved" : "Save"}
           </button>
-        ) : (
-          <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
-            Direct listing
-          </span>
         )}
         <a
           href={job.url}
