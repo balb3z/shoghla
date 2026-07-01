@@ -318,10 +318,9 @@ function extractCVRuleBased(text: string): CVData {
 
   // ── 7. Summary ────────────────────────────────────────────────────────────
   const summaryLines = get("summary");
-  const summary = summaryLines.join(" ").slice(0, 400).trim() ||
-    // Fallback: first substantial paragraph from the "other" section
-    get("other").find((l) => l.length > 60)?.slice(0, 300) ?? "";
-
+  const summary =
+  summaryLines.join(" ").slice(0, 400).trim() ||
+  (get("other").find((l) => l.length > 60)?.slice(0, 300) ?? "");
   return {
     skills: skills.filter(Boolean),
     experience: experience.filter((e) => e.title),
