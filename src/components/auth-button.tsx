@@ -1,4 +1,5 @@
-import { LogOut } from "lucide-react";
+import { LogOut, User } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 
 import { useAuth } from "@/hooks/use-auth";
 import type { CurrentUser } from "@/lib/auth.functions";
@@ -81,6 +82,13 @@ export function AuthButton({ user }: { user: CurrentUser | null }) {
         <DropdownMenuLabel className="truncate">
           {user.name ?? user.email}
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link to="/profile" className="flex cursor-pointer items-center gap-2">
+            <User className="h-4 w-4" />
+            My Profile & CV
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => void signOut()} className="gap-2">
           <LogOut className="h-4 w-4" />
