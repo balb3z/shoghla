@@ -1,5 +1,5 @@
 import { Globe2 } from "lucide-react";
-import shoghlaLogo from "@/assets/shoghla-logo.png.asset.json";
+import shoghlaLogo from "@/assets/shoghla-logo.png";
 
 const SOURCE_STYLES: Record<string, { bg: string; text: string; ring: string }> = {
   linkedin: { bg: "oklch(0.65 0.14 240 / 0.15)", text: "oklch(0.85 0.12 240)", ring: "oklch(0.65 0.14 240 / 0.4)" },
@@ -32,7 +32,7 @@ export function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2">
       <img
-        src={shoghlaLogo.url}
+        src={shoghlaLogo}
         alt="Shoghla"
         className={compact ? "h-8 w-8 object-contain" : "h-9 w-9 object-contain"}
       />

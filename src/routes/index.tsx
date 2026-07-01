@@ -18,7 +18,7 @@ import {
 import { JobCard, JobCardSkeleton } from "@/components/job-card";
 import { BrandMark } from "@/components/brand";
 import { AuthButton } from "@/components/auth-button";
-import shoghlaLogo from "@/assets/shoghla-logo.png.asset.json";
+import shoghlaLogo from "@/assets/shoghla-logo.png";
 import { listFilterOptions, listJobs } from "@/lib/jobs.functions";
 
 export const Route = createFileRoute("/")({
@@ -184,7 +184,7 @@ function HomePage() {
             <section className="mb-6 flex flex-col gap-4 rounded-3xl border border-border bg-gradient-to-br from-surface to-background p-6 sm:p-8">
               <div className="flex items-center gap-3">
                 <img
-                  src={shoghlaLogo.url}
+                  src={shoghlaLogo}
                   alt="Shoghla"
                   className="h-12 w-12 shrink-0 object-contain drop-shadow-[0_0_14px_oklch(0.85_0.16_175_/_0.5)]"
                 />
