@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
 import { getSupabaseServerClient } from "./supabase/server";
 import { extractCVData } from "./cv-extract";
@@ -403,19 +402,48 @@ export const getSavedJobs = createServerFn({ method: "GET" })
   });
 
 // ─── Text extraction helpers ───────────────────────────────────────────────────
-// PDFs are parsed with pdf-parse, DOCX files with mammoth. Both run entirely
+// PDFs are parsed with pdfjs-dist (replaces pdf-parse which has a broken
+// require path at runtime), DOCX files with mammoth. Both run entirely
 // server-side (this file only ever executes inside createServerFn handlers).
+
+async function extractPdfText(buf: Buffer): Promise<string> {
+  // pdfjs-dist is imported dynamically so it only loads server-side and
+  // avoids bundling the large worker into the client bundle.
+  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
+  // Disable the worker — we're running in Node, not a browser context.
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(buf),
+    // Suppress the "Setting up fake worker" console message
+    verbosity: 0,
+  });
+
+  const pdf = await loadingTask.promise;
+  const pageTexts: string[] = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items
+      .map((item: any) => ("str" in item ? item.str : ""))
+      .join(" ");
+    pageTexts.push(pageText);
+  }
+
+  return pageTexts.join("\n").trim();
+}
 
 async function extractTextFromBuffer(buf: Buffer, type: "pdf" | "docx"): Promise<string> {
   if (type === "pdf") {
-    let result: Awaited<ReturnType<typeof pdfParse>>;
+    let text: string;
     try {
-      result = await pdfParse(buf);
+      text = await extractPdfText(buf);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       throw new Error(`PDF parsing failed: ${msg}`);
     }
-    const text = (result.text ?? "").trim();
     if (!text) {
       throw new Error(
         "No text could be extracted from this PDF. It may be a scanned image — please export a text-based PDF or upload a DOCX instead.",
